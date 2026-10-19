@@ -1,85 +1,120 @@
-# WildfireTwinLA：洛杉矶山火数字孪生
+# WildfireTwinLA
 
-在浏览器里用 Three.js 构建洛杉矶山地的 3D 数字孪生：用卫星数据持续更新植被燃料状态，在 GPU 上模拟火势蔓延，用算法辅助人工决定在哪里做燃料处理（防火带、计划烧除、房屋硬化）最能保护社区；火灾发生时实时转发火情、推演蔓延，火线逼近时通知社区住户。
+A browser-based wildfire digital twin for exploring fire spread, comparing prevention strategies, and replaying public wildfire observations on a 3D map.
 
-- 活动：The Dual-Use Hackathon（InnovateLA × USC Viterbi，LA Tech Week 2026 闭幕活动，2026-10-16 至 10-18）
-- 详细技术方案：[docs/technical-design.md](docs/technical-design.md)
-- 数据与实时后端设计：[docs/backend-design.md](docs/backend-design.md)
-- B 模块交付、时间线与 README 合规审计：[docs/backend-delivery-and-compliance.md](docs/backend-delivery-and-compliance.md)
-- 离线网格工具：[data-pipeline/README.md](data-pipeline/README.md)
-- 实时后端运行说明：[server/README.md](server/README.md)
-- 团队分工与接口约定：[docs/team-plan.md](docs/team-plan.md)
-- 当前演示事件与数据边界：[docs/norte-fire.md](docs/norte-fire.md)
-- 地形风场格式与生成方法：[docs/wind-field.md](docs/wind-field.md)
+**[Try the live demo → wildfiretwinla.vercel.app](https://wildfiretwinla.vercel.app/)**
 
-当前 `main` / `b/backend` 数据域是 **2026 Norte Fire（San Juan Capistrano / San
-Clemente）**。Respond 默认播放 Norte 公共数据回放；Eaton 仅作为兼容的旧回放保留。
+The current demo focuses on the **2026 Norte Fire near San Juan Capistrano and San Clemente in Southern California**. It combines terrain, satellite-derived vegetation, fuel models, buildings, and archived weather and hotspot observations in one shared simulation grid.
 
-## 核心功能
+Built for the **InnovateLA × USC Viterbi Dual-Use Hackathon**, with a focus on disaster preparedness and response.
 
-| 模块 | 内容 | 地位 |
-|---|---|---|
-| 3D 场景 | DEM 地形 mesh、卫星底图、燃料热力图、建筑、火焰与烟雾、等时线、时间轴 | 必须 |
-| 火势蔓延 | GPU 元胞自动机（坡度、风、燃料、飞火），64 路集合预报给出燃烧概率与到达时间 | 核心 |
-| 实时火情转发 | 轮询 NASA FIRMS、GOES-18 和风况，聚类成火灾事件，同化进模拟，通过 WebSocket/SSE 和 webhook 推送 | 核心 |
-| 人工防控算法 | 风险图、火流咽喉点、预算约束下的燃料处理优化；用户可手动画处理区并与算法方案对比 | 核心 |
-| AI 外呼 | 火线预计到达社区时，通过 Retell 给主动登记的住户打电话，回写通话结果 | Feature |
+## Explore the demo
 
-## 数据源
+- **Respond:** Replay the Norte Fire using archived public observations. Follow reported ignitions, satellite hotspot detections, changing winds, and evacuation-order records alongside the modeled spread.
+- **Plan:** Explore prevention scenarios for the same area. Compare manual fuel treatments and home hardening with a budget-constrained planning algorithm, and inspect their modeled effect on community risk.
+- **Emergency contact simulation:** Watch simulated outreach scheduling as homes become threatened. The public demo uses synthetic households and runs its dispatcher in a browser worker.
 
-| 用途 | 数据源 | 说明 |
-|---|---|---|
-| 地形 | AWS Terrain Tiles（Terrarium）、USGS 3DEP | 用于分析和模拟 |
-| 视觉增强 | Google Photorealistic 3D Tiles | 只做显示；Google 条款限制从中提取数据做分析 |
-| 植被燃料 | Copernicus Sentinel-2 L2A（NDVI、NDMI），LANDFIRE FBFM40 | Sentinel-2 约 5 天重访一次，是周期更新而非实时 |
-| 实时火点 | NASA FIRMS（VIIRS/MODIS）、GOES-18 ABI FDC | FIRMS 约 3 小时内、375 m；GOES 每 5 分钟、2 km |
-| 风况 | Open-Meteo、NWS api.weather.gov | 免费，无需 key |
-| 建筑 | Microsoft US Building Footprints、OpenStreetMap | — |
-| 验证 | NIFC WFIGS Norte 火界（发布前使用明确标注的临时烧迹地） | 当前 WFIGS 尚无 Norte 周界，不能把热点外包络冒充官方火界 |
+The hosted demo runs in the browser without a backend. Its replay data is bundled with the app. Live data feeds require a separately configured backend and are disabled on the standalone site.
 
-## 对现实的几点认识
+> WildfireTwinLA is an experimental, non-official decision-support demo. Modeled spread and alerts are not forecasts or evacuation orders. Follow local authorities for emergency instructions. Community boundaries are approximate; satellite detections and provisional fire extents must not be treated as official perimeters.
 
-1. **洛杉矶山地以灌木丛（chaparral）和草地为主**，燃料建模要看类型、连续性和含水量，不能只看"树的密度"。
-2. **Santa Ana 大风下，飞火（ember）会跳过防火带**。2025 年 Palisades、Eaton 火灾中，房屋多由飞火点燃。所以算法必须模拟飞火，并把房屋 Zone 0 硬化纳入处理手段。
-3. **计划烧除只能由 CAL FIRE 等机构执行**，本系统是决策辅助工具，不下达指令。
-4. **告警以转达和放大官方疏散令为主**，自身的蔓延预测标注为"非官方参考"。
-5. **住户联系方式只来自主动登记（opt-in）**。AI 语音外呼受 TCPA 约束（FCC 2024 年裁定 AI 语音属于人工语音），紧急用途豁免是否适用需法律确认。
+## How it works
 
-## 现有产品
+The Three.js frontend renders terrain, buildings, vegetation, fire, and smoke. A GPU cellular automaton models spread using slope, wind, fuel, and ember spotting. Shared TypeScript algorithms support arrival-time analysis, risk evaluation, and treatment planning.
 
-| 产品 | 做什么 | 与本项目的关系 |
-|---|---|---|
-| Watch Duty | 非营利实时火情 App | 实时转发的参照；本项目的差异在 3D 推演与防控规划 |
-| Technosylva | CAL FIRE 使用的专业蔓延预测 | 专业版蔓延模型 |
-| FlamMap / TOM | 燃料处理优化工具 | 防控算法的专业参照，界面不面向大众 |
-| Genasys Protect、Alert LA County | 官方疏散分区与警报 | 告警的权威来源 |
-| ALERTCalifornia、Pano AI | 摄像头加 AI 早期发现 | 发现环节 |
+The current area uses a **512 × 512 grid with 25 m cells in EPSG:32611**. The offline Python pipeline aligns geospatial inputs to this grid. The FastAPI backend supports recorded replay, optional live ingestion, incident clustering, WebSocket delivery, resident opt-in, and optional Retell integration.
 
-## Dual-Use 定位
+| Input | Sources used by the project |
+| --- | --- |
+| Terrain | USGS 3DEP elevation |
+| Vegetation and fuel | Copernicus Sentinel-2 L2A and LANDFIRE FBFM40 |
+| Buildings and roads | OpenStreetMap |
+| Hotspot observations | NASA FIRMS VIIRS/MODIS; optional GOES-18 ingestion |
+| Weather | Archived HRRR winds via Open-Meteo; optional live weather polling |
+| Incident and comparison data | NIFC WFIGS records and explicitly labeled provisional extents where an official perimeter is unavailable |
 
-黑客松的第一条评分是 dual-use 契合度，并要求回答三道自检题。
+Norte is the default dataset. The earlier Eaton replay remains available for compatibility. See the [Norte scenario and data boundaries](docs/norte-fire.md) for provenance and limitations.
 
-| 测试 | 回答 |
-|---|---|
-| 平日（谁付钱） | 防控规划工具：电力公司植被管理（SCE 等负有法定清理义务）、LA County Fire brush clearance、Fire Safe Council、保险公司 |
-| 危机（凌晨 3 点、网络断了） | 平日积累的集合预报构成"风况 × 起火区"情景库，PWA 离线缓存；断网时按当前风况调出最接近的情景 |
-| 迁移（预算只有十分之一） | Sentinel-2、FIRMS、Copernicus DEM 均为全球免费数据，换地区只需换 bbox；Google 只负责视觉 |
+## Run locally
 
-**赛道倾向：Energy**（合作方 BASE；SCE 为赞助方）。蔓延推演可以输出"哪几条线路受威胁"，用精准断电代替大面积 PSPS，回答"如何让最需要的人保住电"。最终以赛事公布的详细 prompt 为准。
+Use **Node.js 24+**, **Python 3.11+**, and [uv](https://docs.astral.sh/uv/). The committed Norte data is sufficient to run the default demo; no API keys or GIS downloads are required.
 
-## 黑客松要点
+### Frontend
 
-- 主题：Preparing for Disaster。做 dual-use 方案，避免危机中的系统停摆；强调韧性、效率与成本。
-- 赛道：Marine、Energy（BASE）、Communications（Retell）、Ports。
-- 评分（各 1–5 分）：dual-use 契合度、技术执行与 MVP、可行性与影响、对 twist 的适应、demo 与 pitch。
-- 三次 twist，每次 6 小时响应窗口，鼓励但不强制采纳。
-- 前三名：$1,000 / $500 / $200，并进入 DAS Family InnovateLA 孵化器，春季争夺 $30K。
-- 每队 2–4 人，至少一名 USC 学生；IBM Bob 单独设奖；IBM 与 NASA 在 Hugging Face 开放了地理空间模型（含火烧迹地 burn scar）。
-- 入口：innovatelosangeles.com/dual-use；提交：innovatela.devpost.com。
+From the repository root:
 
-## 待确认
+```bash
+cd web
+npm ci
+npm run dev
+```
 
-- [ ] 赛事详细 prompt 与最终赛道
-- [ ] SCE 线路级地理数据是否公开可得
-- [ ] CAL FIRE 事件接口与 Genasys 疏散分区数据是否可程序化获取
-- [ ] Google Maps Platform 3D Tiles 的免费额度
+Open the local address printed by Vite. In development, the frontend tries the backend on port `8010` and falls back to its bundled replay when the backend is unavailable.
+
+### Optional backend
+
+In a separate terminal, from the repository root:
+
+```bash
+cd server
+uv sync --frozen --extra dev
+.venv/bin/uvicorn app.main:app --reload --port 8010
+```
+
+Run from `server/` so the default replay and grid paths resolve correctly. Pollers and real calls are disabled by default. Check `/healthz` and `/readyz` for service status.
+
+For live ingestion or Retell configuration, follow the [server README](server/README.md) and its `.env.example`. Keep credentials in backend environment variables or an untracked `.env` file; never put secrets in frontend `VITE_` variables.
+
+### Data pipeline
+
+```bash
+cd data-pipeline
+uv sync --frozen --extra dev
+```
+
+The [pipeline guide](data-pipeline/README.md) covers source downloads, grid generation, community rasterization, and replay generation. Refreshing external datasets is optional for running the committed demo.
+
+## Build and validate
+
+Run each command from the repository root:
+
+```bash
+# Frontend type check and production build
+npm --prefix web run build
+
+# Shared simulation and planning tests
+npm --prefix packages/core test
+
+# Norte scenario and calibration tests
+node --experimental-transform-types --test analysis/norte.test.ts
+python -m unittest discover -s analysis -p 'test_*.py'
+
+# Backend tests and lint (after backend setup)
+(cd server && .venv/bin/pytest -q && .venv/bin/ruff check .)
+
+# Pipeline tests and lint (after pipeline setup)
+(cd data-pipeline && .venv/bin/pytest -q && .venv/bin/ruff check .)
+```
+
+For the standalone production build, leave `VITE_API_URL` unset. The repository's `vercel.json` builds from the repository root and publishes `web/dist`; the frontend also imports shared code and replay data outside `web/`. See the [deployment guide](docs/deploy.md).
+
+## Repository guide
+
+| Directory | Purpose |
+| --- | --- |
+| `web/` | Three.js interface, GPU simulation, replay, and browser dispatcher |
+| `packages/core/` | Shared grid contracts, spread analysis, and planning algorithms |
+| `server/` | FastAPI API, ingestion, replay, alerts, and optional outreach integration |
+| `data-pipeline/` | Offline geospatial preprocessing and dataset generation |
+| `analysis/` | Calibration, validation, and Norte scenario experiments |
+| `data/norte/` | Archived public inputs and scenario data |
+| `docs/` | Design, data provenance, deployment, and team contracts |
+
+## Further reading
+
+- [Technical design](docs/technical-design.md)
+- [Backend architecture](docs/backend-design.md)
+- [Norte Fire scenario](docs/norte-fire.md)
+- [Shared interfaces and team plan](docs/team-plan.md)
+- [Terrain wind-field format](docs/wind-field.md)
+- [Backend delivery and compliance notes](docs/backend-delivery-and-compliance.md)
